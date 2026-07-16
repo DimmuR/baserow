@@ -672,6 +672,35 @@ def test_prune_points_ignores_unknown_ids():
     assert model.graph == {"0": 1, "1": {"next": {"": [2]}}, "2": {}}
 
 
+# ---------------------------------------------------------------------------
+# migrate_graph: a point referenced by the graph but missing from id_mapping
+# (drifted out of sync with the DB-driven export projection, e.g. hard-deleted
+# by old code without pruning the graph — the same class of drift
+# heal_orphan_elements reconciles) must be dropped rather than raising
+# KeyError and aborting the whole import (BASEROW-SAAS-BACKEND-16K).
+# ---------------------------------------------------------------------------
+
+
+def test_migrate_graph_drops_stale_points_missing_from_id_mapping():
+    model = make_graph_model(
+        {
+            "0": 1,
+            "1": {"next": {"": [2]}},
+            "2": {},
+        }
+    )
+    graph = model.get_graph()
+
+    # id_mapping only knows about point 1 — point 2 is "stale": referenced by
+    # the graph but absent from id_mapping, mirroring a page.graph point whose
+    # Element row no longer exists.
+    id_mapping = {"": {1: 101}}
+
+    graph.migrate_graph(id_mapping)
+
+    assert model.graph == {"0": 101, "101": {}}
+
+
 def test_get_position_of_root_is_north():
     # The root must report `(None, "north", "")` so the triplet round-trips back
     # through move()/insert() (which restore the root) rather than colliding with
