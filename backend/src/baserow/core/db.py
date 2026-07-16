@@ -187,6 +187,15 @@ def specific_iterator(
         select_related_keys = [] if select_related is None else select_related
         resolved_queryset = queryset_or_list
 
+    ct_ids = {item.content_type_id for item in resolved_queryset}
+    if ct_ids:
+        ct_manager = ContentType.objects
+        ct_cache = ct_manager._cache.get(ct_manager.db, {})
+        uncached_ids = ct_ids - ct_cache.keys()
+        if uncached_ids:
+            for ct in ct_manager.filter(pk__in=uncached_ids):
+                ct_manager._add_to_cache(ct_manager.db, ct)
+
     types_and_pks = defaultdict(list)
     for item in resolved_queryset:
         content_type = ContentType.objects.get_for_id(item.content_type_id)
