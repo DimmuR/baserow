@@ -1,12 +1,33 @@
+import msgpack
 import pytest
 from pytest_unordered import unordered
 
-from baserow.contrib.database.api.views.serializers import serialize_group_by_metadata
+from baserow.contrib.database.api.views.grid.serializers import (
+    GridViewFieldOptionsSerializer,
+)
+from baserow.contrib.database.api.views.serializers import (
+    FieldOptionsField,
+    serialize_group_by_metadata,
+)
 from baserow.contrib.database.fields.models import Field
 from baserow.contrib.database.fields.registries import field_type_registry
 from baserow.contrib.database.views.handler import ViewHandler
 from baserow.contrib.database.views.models import DEFAULT_SORT_TYPE_KEY
 from baserow.test_utils.helpers import setup_interesting_test_table
+
+
+@pytest.mark.django_db
+def test_field_options_field_to_representation_keys_are_msgpack_safe(data_fixture):
+    grid_view = data_fixture.create_grid_view()
+    data_fixture.create_text_field(table=grid_view.table)
+
+    payload = FieldOptionsField(
+        serializer_class=GridViewFieldOptionsSerializer
+    ).to_representation(grid_view)
+
+    assert payload, "expected at least one field option in the payload"
+    packed = msgpack.packb(payload, use_bin_type=True)
+    msgpack.unpackb(packed, strict_map_key=True, raw=False)
 
 
 @pytest.mark.django_db
