@@ -137,6 +137,14 @@ def test_split_comma_separated_string():
     assert split_comma_separated_string('A,\\"B,C\\,D') == ["A", '"B', "C,D"]
 
 
+def test_split_comma_separated_string_with_unquoted_newline_raises_value_error():
+    # Sentry BASEROW-SAAS-BACKEND-RM: a raw newline in an unquoted field made
+    # csv.reader blow up with an uncaught csv.Error instead of a well-known
+    # exception type callers already handle.
+    with pytest.raises(ValueError):
+        split_comma_separated_string('[\n  {\n    "name": ""\n  }\n]')
+
+
 def test_remove_invalid_surrogate_characters():
     assert remove_invalid_surrogate_characters(b"test\uD83Dtest") == "testtest"
 

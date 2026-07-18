@@ -520,11 +520,14 @@ def split_comma_separated_string(comma_separated_string: str) -> List[str]:
 
     # Use python's csv handler as it knows how to handle quoted csv values etc.
     # csv.reader returns an iterator, we use next to get the first split row back.
-    return next(
-        csv.reader(
-            [comma_separated_string], delimiter=",", quotechar='"', escapechar="\\"
+    try:
+        return next(
+            csv.reader(
+                [comma_separated_string], delimiter=",", quotechar='"', escapechar="\\"
+            )
         )
-    )
+    except csv.Error as e:
+        raise ValueError(f"Could not split comma separated string: {e}") from e
 
 
 def list_to_comma_separated_string(value_list: List[str]) -> str:
