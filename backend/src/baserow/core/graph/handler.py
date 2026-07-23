@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type
@@ -19,6 +20,8 @@ from baserow.core.graph.types import (
 
 if TYPE_CHECKING:
     from baserow.core.graph.models import GraphPointMixin
+
+logger = logging.getLogger(__name__)
 
 
 def _replace(list_, item_to_replace, replacement):
@@ -1074,6 +1077,23 @@ class BaseGraphHandler(ABC):
         :param id_mapping: A dict containing the mapping of old IDs to new IDs for both
             points and edges.
         """
+
+        known_ids = id_mapping.get(self.instance_id_mapping, {})
+        stale_ids = {
+            int(key)
+            for key in self.graph
+            if key != self.GRAPH_ROOT_KEY and int(key) not in known_ids
+        }
+        pruned = self.prune_points(stale_ids)
+        if pruned:
+            logger.warning(
+                "Pruned %d stale point(s) missing from id_mapping while "
+                "migrating %s graph %s: %s",
+                len(pruned),
+                self.instance_id_mapping,
+                self.instance.id,
+                pruned,
+            )
 
         migrated = {}
 

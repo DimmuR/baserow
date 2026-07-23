@@ -554,6 +554,13 @@ class PageHandler:
         :return: The serialized version.
         """
 
+        # Reconcile page.graph with the live Element rows before exporting, so the
+        # exported graph and the exported elements list are guaranteed to agree
+        # (otherwise a stale graph point can outlive the export and crash import's
+        # migrate_graph, which only has an id_mapping for elements it actually
+        # (re)created).
+        ElementHandler().heal_orphan_elements(page)
+
         # Get serialized version of all elements of the current page
         serialized_elements = [
             ElementHandler().export_element(
