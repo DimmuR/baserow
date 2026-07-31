@@ -7595,20 +7595,24 @@ class AutonumberFieldType(ReadOnlyFieldType):
         not_trashed_first = Case(When(Q(trashed=False), then=Value(0)), default=1).asc()
         order_bys = (not_trashed_first, "order", "id")
 
-        if view is not None:
-            queryset = ViewHandler().get_queryset(None, view).values("id")
+        table_model = field.table.get_model()
+        base_qs = table_model.objects_and_trash
 
-            filters = queryset.query.where
+        if view is not None:
+            filters = ViewHandler().get_queryset(None, view).values("id").query.where
             filtered_first = Case(When(filters, then=Value(0)), default=1).asc()
 
-            # The last two order bys are the default order bys of the table
-            if custom_order_bys := queryset.query.order_by[:-2]:
-                order_bys = (*custom_order_bys, *order_bys)
+            # Build the view's sort order-bys against the sequencing queryset itself
+            # so any annotation-backed sort (e.g. `field_<id>_agg_sort`) has its
+            # companion annotation applied to `base_qs`, keeping the order-by
+            # resolvable. The helper appends the default ("order", "id") which we
+            # replace with our own trailing order bys below.
+            custom_order_bys, base_qs = ViewHandler().get_view_order_bys(
+                view, table_model, base_qs
+            )
+            order_bys = (filtered_first, *custom_order_bys[:-2], *order_bys)
 
-            order_bys = (filtered_first, *order_bys)
-
-        table_model = field.table.get_model()
-        qs = table_model.objects_and_trash.annotate(
+        qs = base_qs.annotate(
             row_nr=Window(expression=RowNumber(), order_by=order_bys),
         ).values("id", "row_nr")
         sql, params = qs.query.get_compiler(connection=connection).as_sql()
