@@ -165,6 +165,17 @@ class XMLTableExporter(PremiumTableExporter):
         return ".xml"
 
 
+def _strip_xml_illegal_chars(value: str) -> str:
+    # openpyxl rejects XML control chars (0x00-08, 0x0B-0C, 0x0E-1F) in
+    # worksheet cells and raises IllegalCharacterError, aborting the whole
+    # export. Strip them (reusing openpyxl's own regex so the removed class
+    # matches the validated one exactly) so one bad byte doesn't fail the file.
+    # Allowed whitespace (tab/newline/CR) is preserved.
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
+    return ILLEGAL_CHARACTERS_RE.sub("", value)
+
+
 class ExcelQuerysetSerializer(QuerysetSerializer):
     def __init__(self, queryset, ordered_field_objects, **kwargs):
         super().__init__(queryset, ordered_field_objects, **kwargs)
@@ -198,6 +209,7 @@ class ExcelQuerysetSerializer(QuerysetSerializer):
         worksheet = workbook.create_sheet()
 
         def text_cell(value):
+            value = _strip_xml_illegal_chars(value)
             # openpyxl types a string that starts with "=" as a live formula
             # cell, so a user defined field name or cell value could carry a
             # formula injection (CWE-1236). Force those to an explicit string
