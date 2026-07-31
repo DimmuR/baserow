@@ -383,11 +383,18 @@ class TextFieldToMultipleSelectFieldConverter(FieldConverter):
 
         # The lenient_schema_editor is needed so that field type specific conversions
         # will be respected when converting to a MultipleSelectField.
+        # force_alter_column=True forces the physical rewrite of the source column to
+        # text even when the declared old type already reads as `text`. This defends
+        # against declared-vs-physical divergence (e.g. an errored formula that declares
+        # `text` but keeps a residual `jsonb` column): without it Django skips the
+        # USING ::text cast when old_type == new_type == "text", and regexp_split_to_array
+        # below would then run against a jsonb column and crash.
         with lenient_schema_editor(
             from_field_type.get_alter_column_prepare_old_value(
                 connection, from_field, to_field
             ),
             None,
+            force_alter_column=True,
         ) as schema_editor:
             # Convert the existing column to a temporary text field.
             tmp_model_field, _ = helper.add_temporary_text_field_to_model(

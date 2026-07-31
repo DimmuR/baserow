@@ -82,6 +82,7 @@ from baserow.core.utils import list_to_comma_separated_string
 class BaserowJSONBObjectBaseType(BaserowFormulaValidType, ABC):
     array_index_sql = "{elem} -> 'value'"
     output_field_class = JSONField
+    db_column_is_jsonb = True
 
     def parse_filter_value(self, field, model_field, value):
         """
@@ -1217,6 +1218,7 @@ class BaserowFormulaArrayType(
     BaserowFormulaValidType,
 ):
     type = "array"
+    db_column_is_jsonb = True
     user_overridable_formatting_option_fields = [
         "array_formula_type",
     ]
