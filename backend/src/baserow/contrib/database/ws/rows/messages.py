@@ -24,14 +24,17 @@ class RealtimeRowMessages:
     def rows_created(
         table_id: int,
         serialized_rows: List[Dict[str, Any]],
-        metadata: Dict[str, Any],
+        metadata: Dict[int, Dict[str, Any]],
         before: Optional[GeneratedTableModel],
     ) -> Dict[str, Any]:
         return {
             "type": "rows_created",
             "table_id": table_id,
             "rows": serialized_rows,
-            "metadata": metadata,
+            # Keys must be stringified here: this payload is sent to the channel
+            # layer, and channels_redis unpacks it with msgpack's
+            # strict_map_key=True, which rejects int map keys.
+            "metadata": {str(k): v for k, v in metadata.items()},
             "before_row_id": before.id if before else None,
         }
 
@@ -51,7 +54,10 @@ class RealtimeRowMessages:
             # view.
             "rows_before_update": serialized_rows_before_update,
             "rows": serialized_rows,
-            "metadata": metadata,
+            # Keys must be stringified here: this payload is sent to the channel
+            # layer, and channels_redis unpacks it with msgpack's
+            # strict_map_key=True, which rejects int map keys.
+            "metadata": {str(k): v for k, v in metadata.items()},
             "updated_field_ids": updated_field_ids,
         }
 

@@ -1,14 +1,22 @@
+from typing import Any, Dict, List
 from unittest.mock import AsyncMock, patch
 
 from django.db import transaction
 from django.test.utils import override_settings
 
+import msgpack
 import pytest
+from rest_framework import serializers
+from rest_framework.fields import Field
 
 from baserow.contrib.database.fields.dependencies.update_collector import (
     DependantRowsUpdate,
 )
 from baserow.contrib.database.rows.handler import RowHandler
+from baserow.contrib.database.rows.registries import (
+    RowMetadataType,
+    row_metadata_registry,
+)
 from baserow.contrib.database.rows.signals import dependant_rows_updated
 from baserow.contrib.database.ws.rows.tasks import broadcast_dependant_rows_updated
 
@@ -285,3 +293,54 @@ def test_broadcast_task_skips_trashed_rows_and_missing_tables(mock_send, data_fi
         table_id=0, row_ids=[row_1.id], updated_field_ids=[field.id]
     )
     mock_send.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch(
+    "baserow.contrib.database.ws.rows.tasks.send_messages_to_channel_group",
+    new_callable=AsyncMock,
+)
+def test_broadcast_task_metadata_survives_strict_msgpack_round_trip(
+    mock_send, data_fixture
+):
+    # channels_redis packs/unpacks channel-layer messages with msgpack using
+    # strict_map_key=True on unpack, which rejects dict keys that aren't
+    # str/bytes. generate_and_merge_metadata_for_rows returns a dict keyed by
+    # integer row id, so it must be stringified before it reaches the payload.
+    class DummyMetadata(RowMetadataType):
+        type = "dummy"
+
+        def generate_metadata_for_rows(
+            self, user, table, row_ids: List[int]
+        ) -> Dict[int, Any]:
+            return {row_id: True for row_id in row_ids}
+
+        def get_example_serializer_field(self) -> Field:
+            return serializers.BooleanField()
+
+    row_metadata_registry.register(DummyMetadata())
+    try:
+        user = data_fixture.create_user()
+        table = data_fixture.create_database_table(user=user)
+        field = data_fixture.create_text_field(table=table)
+        model = table.get_model()
+        row_1 = model.objects.create(**{field.db_column: "a"})
+
+        broadcast_dependant_rows_updated(
+            table_id=table.id,
+            row_ids=[row_1.id],
+            updated_field_ids=[field.id],
+        )
+
+        payload = mock_send.call_args[0][1].message["payload"]
+        assert payload["metadata"] == {str(row_1.id): {"dummy": True}}
+
+        try:
+            msgpack.unpackb(msgpack.packb(payload), strict_map_key=True)
+        except ValueError as e:
+            pytest.fail(
+                "payload must survive a strict-map-key msgpack round trip, "
+                f"as used by channels_redis on unpack, but raised: {e}"
+            )
+    finally:
+        row_metadata_registry.unregister(DummyMetadata.type)
