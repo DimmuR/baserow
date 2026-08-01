@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
+from django.test.utils import CaptureQueriesContext
 
 import pytest
 
@@ -64,6 +65,61 @@ def test_view_get_field_options(data_fixture):
     assert field_options[0].field_id == field_1.id
     assert field_options[1].field_id == field_2.id
     assert field_options[2].field_id == field_3.id
+
+
+@pytest.mark.django_db
+def test_create_missing_field_options_does_not_scale_with_field_count(data_fixture):
+    # Regression test for an N+1: create_missing_field_options() must not
+    # re-query GridViewFieldOptions once per missing field.
+    table = data_fixture.create_database_table()
+    grid_view = data_fixture.create_grid_view(table=table, create_options=False)
+    fields = [data_fixture.create_text_field(table=table) for _ in range(10)]
+
+    with CaptureQueriesContext(connection) as captured:
+        field_options = grid_view.get_field_options(create_if_missing=True)
+
+    assert len(field_options) == len(fields)
+
+    field_options_queries = [
+        query
+        for query in captured.captured_queries
+        if "database_gridviewfieldoptions" in query["sql"]
+    ]
+    # The number of queries against GridViewFieldOptions must stay constant
+    # regardless of how many fields are missing options. The buggy code
+    # issues 2 extra queries per missing field (20 for 10 fields, plus the
+    # initial/final existence checks), well above this bound.
+    assert len(field_options_queries) <= 4, (
+        f"Expected a constant number of GridViewFieldOptions queries, got "
+        f"{len(field_options_queries)} for {len(fields)} missing fields"
+    )
+
+
+@pytest.mark.django_db
+def test_gallery_create_missing_field_options_does_not_scale_with_field_count(
+    data_fixture,
+):
+    # Regression test for the same N+1 as
+    # test_create_missing_field_options_does_not_scale_with_field_count, but
+    # for a different view type sharing create_missing_field_options().
+    table = data_fixture.create_database_table()
+    gallery_view = data_fixture.create_gallery_view(table=table, create_options=False)
+    fields = [data_fixture.create_text_field(table=table) for _ in range(10)]
+
+    with CaptureQueriesContext(connection) as captured:
+        field_options = gallery_view.get_field_options(create_if_missing=True)
+
+    assert len(field_options) == len(fields)
+
+    field_options_queries = [
+        query
+        for query in captured.captured_queries
+        if "database_galleryviewfieldoptions" in query["sql"]
+    ]
+    assert len(field_options_queries) <= 4, (
+        f"Expected a constant number of GalleryViewFieldOptions queries, got "
+        f"{len(field_options_queries)} for {len(fields)} missing fields"
+    )
 
 
 @pytest.mark.django_db

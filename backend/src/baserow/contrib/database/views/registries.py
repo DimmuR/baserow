@@ -1010,30 +1010,45 @@ class ViewType(
             }
         ).delete()
 
+    def get_default_hidden_for_new_field_options(
+        self, view: "View", existing_options_field_ids: List[int]
+    ) -> bool:
+        """
+        Returns whether a newly created field option row for this view should
+        default to hidden. The result only depends on `view` and the set of
+        field ids that already have options, never on a specific field, so
+        callers creating options for several fields at once must compute this
+        once and reuse it instead of calling it per field.
+
+        :param view: The view for which the default must be returned.
+        :param existing_options_field_ids: The field ids that already have
+            field options for this view.
+        :return: Whether a new field option should default to hidden.
+        """
+
+        options_model_class = self.field_options_model_class
+        model_class_default = options_model_class._meta.get_field("hidden").default
+        return bool(
+            model_class_default
+            or view.public
+            or self.get_hidden_fields(view, existing_options_field_ids)
+        )
+
     def prepare_field_options(
-        self, view: "View", field_id: "int"
+        self, view: "View", field_id: "int", hidden: bool
     ) -> Type[django_models.Model]:
         """
         Returns the default field options for the provided view. This method can be
-        overridden to provide custom default field options attributes. By default
-        a field will be hidden if the view is public or if other fields are hidden.
+        overridden to provide custom default field options attributes.
 
         :param view: The view for which the default field options must be returned.
+        :param field_id: The id of the field the options are for.
+        :param hidden: Whether the field option should default to hidden, as
+            returned by `get_default_hidden_for_new_field_options`.
         :return: The default field options.
         """
 
         options_model_class = self.field_options_model_class
-        view_field_options = getattr(
-            view, f"{options_model_class._meta.model_name}_set"
-        ).all()
-        existing_options_field_ids = [option.field_id for option in view_field_options]
-
-        model_class_default = options_model_class._meta.get_field("hidden").default
-        hidden = (
-            model_class_default
-            or view.public
-            or bool(self.get_hidden_fields(view, existing_options_field_ids))
-        )
 
         return options_model_class(
             **{

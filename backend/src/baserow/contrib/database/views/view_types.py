@@ -1456,8 +1456,15 @@ class FormViewType(ViewType):
             "conditions", "condition_groups", "allowed_select_options"
         )
 
+    def get_default_hidden_for_new_field_options(
+        self, view: FormView, existing_options_field_ids: List[int]
+    ) -> bool:
+        # FormViewFieldOptions has no `hidden` concept (it uses `enabled`
+        # instead), so there is nothing to compute here.
+        return False
+
     def prepare_field_options(
-        self, view: FormView, field_id: int
+        self, view: FormView, field_id: int, hidden: bool = False
     ) -> FormViewFieldOptions:
         return FormViewFieldOptions(
             field_id=field_id, form_view_id=view.id, enabled=False
