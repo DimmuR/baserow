@@ -29,6 +29,7 @@ from baserow.core.models import Workspace, WorkspaceUser
 from baserow.core.registries import (
     ImportExportConfig,
     OperationType,
+    resolve_import_workspace,
     serialization_processor_registry,
 )
 from baserow.core.registry import (
@@ -574,11 +575,13 @@ class ViewType(
                 cache,
             )
 
+        workspace = resolve_import_workspace(table.database.workspace, id_mapping)
+
         for (
             serialized_structure_processor
         ) in serialization_processor_registry.get_all():
             serialized_structure_processor.import_serialized(
-                table.database.workspace, view, serialized_copy, import_export_config
+                workspace, view, serialized_copy, import_export_config
             )
 
         return view

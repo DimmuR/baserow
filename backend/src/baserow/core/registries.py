@@ -60,6 +60,28 @@ if TYPE_CHECKING:
     )
 
 
+def resolve_import_workspace(
+    workspace: Optional["Workspace"], id_mapping: Dict[str, Any]
+) -> Optional["Workspace"]:
+    """
+    Snapshot creation imports applications with `workspace=None` by design (see
+    `SnapshotHandler.perform_create`), threading the real workspace id through
+    `id_mapping["import_workspace_id"]` instead. Callers that need the real
+    workspace during import must resolve it through this fallback.
+    """
+
+    if workspace is not None:
+        return workspace
+
+    import_workspace_id = id_mapping.get("import_workspace_id")
+    if import_workspace_id is None:
+        return None
+
+    from baserow.core.models import Workspace
+
+    return Workspace.objects.get(pk=import_workspace_id)
+
+
 @dataclasses.dataclass
 class ImportExportConfig:
     """
@@ -455,13 +477,7 @@ class ApplicationType(
         `serialization_processor_registry` wants to include.
         """
 
-        source_workspace = workspace
-        from baserow.core.models import Workspace
-
-        if not source_workspace:
-            source_workspace = Workspace.objects.get(
-                pk=id_mapping["import_workspace_id"]
-            )
+        source_workspace = resolve_import_workspace(workspace, id_mapping)
 
         for serialized_structure in serialization_processor_registry.get_all():
             serialized_structure.import_serialized(

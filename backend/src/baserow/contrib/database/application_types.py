@@ -33,6 +33,7 @@ from baserow.core.models import Application, Workspace
 from baserow.core.registries import (
     ApplicationType,
     ImportExportConfig,
+    resolve_import_workspace,
     serialization_processor_registry,
 )
 from baserow.core.storage import ExportZipFile
@@ -614,7 +615,7 @@ class DatabaseApplicationType(ApplicationType):
     def _import_extra_metadata(
         self, serialized_tables, id_mapping, import_export_config
     ):
-        source_workspace = Workspace.objects.get(pk=id_mapping["import_workspace_id"])
+        source_workspace = resolve_import_workspace(None, id_mapping)
         for serialized_table in serialized_tables:
             table = serialized_table["_object"]
             if not import_export_config.reduce_disk_space_usage:
