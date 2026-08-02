@@ -48,7 +48,7 @@ from baserow.core.graph.handler import BaseGraphHandler
 from baserow.core.graph.types import GraphPointPosition, GraphPointPositionType
 from baserow.core.storage import ExportZipFile
 from baserow.core.telemetry.utils import baserow_trace_handler
-from baserow.core.utils import MirrorDict, extract_allowed
+from baserow.core.utils import MirrorDict, extract_allowed, get_attr_or_none
 
 old_element_type_map = {"dropdown": "choice"}
 
@@ -663,7 +663,7 @@ class ElementHandler:
         element_changes: Dict[str, Tuple] = {}
 
         for key, new_value in allowed_updates.items():
-            prev_value = getattr(element, key)
+            prev_value = get_attr_or_none(element, key)
             if prev_value != new_value:
                 element_changes[key] = (prev_value, new_value)
             setattr(element, key, new_value)

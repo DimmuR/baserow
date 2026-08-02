@@ -41,7 +41,7 @@ from baserow.contrib.builder.types import ElementDict
 from baserow.core.graph.types import GraphPointPosition, GraphPointPositionType
 from baserow.core.services.dispatch_context import DispatchContext
 from baserow.core.services.registries import service_type_registry
-from baserow.core.utils import merge_dicts_no_duplicates
+from baserow.core.utils import get_attr_or_none, merge_dicts_no_duplicates
 
 
 class ContainerElementTypeMixin:
@@ -290,7 +290,11 @@ class CollectionElementTypeMixin:
             element.data_source_id is not None
             and element.page.id == element.page.builder.shared_page.id
         ):
-            if element.data_source.page_id != element.page.builder.shared_page.id:
+            data_source = get_attr_or_none(element, "data_source")
+            if (
+                data_source is None
+                or data_source.page_id != element.page.builder.shared_page.id
+            ):
                 element.property_options.all().delete()
                 element.data_source_id = None
                 element.schema_property = None
