@@ -1,3 +1,4 @@
+import math
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Set, Type
 
@@ -428,6 +429,8 @@ def json_safe_aggregation_value(value: Any) -> Any:
     # own how its aggregated value is represented; this single helper keeps that
     # concern in one place until that field-type-level refactor is worth doing.
     if isinstance(value, Decimal) and value.is_nan():
+        return "NaN"
+    if isinstance(value, float) and math.isnan(value):
         return "NaN"
     return value
 

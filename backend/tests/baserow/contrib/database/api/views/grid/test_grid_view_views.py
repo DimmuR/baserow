@@ -1888,6 +1888,45 @@ def test_can_get_aggregation_if_result_is_nan(api_client, data_fixture):
 
 
 @pytest.mark.django_db
+def test_can_get_median_aggregation_if_result_is_float_nan(api_client, data_fixture):
+    user, token = data_fixture.create_user_and_token()
+    table = data_fixture.create_database_table(user=user)
+    grid_view = data_fixture.create_grid_view(table=table)
+
+    # This formula will resolve as Decimal("NaN") for every row. The median
+    # aggregation forces the SQL result into a plain Python float (regardless of
+    # the underlying field's Decimal type), so the response ends up carrying an
+    # un-sanitized `float('nan')` instead of the `Decimal('NaN')` case that's
+    # already handled.
+    formula_field = data_fixture.create_formula_field(table=table, formula="1 / 0")
+
+    RowHandler().create_row(user, table)
+
+    ViewHandler().update_field_options(
+        view=grid_view,
+        field_options={
+            formula_field.id: {
+                "aggregation_type": "median",
+                "aggregation_raw_type": "median",
+            }
+        },
+    )
+
+    url = reverse(
+        "api:database:views:grid:field-aggregations",
+        kwargs={"view_id": grid_view.id},
+    )
+
+    response = api_client.get(
+        url,
+        **{"HTTP_AUTHORIZATION": f"JWT {token}"},
+    )
+
+    assert response.status_code == HTTP_200_OK
+    assert response.json() == {f"field_{formula_field.id}": "NaN"}
+
+
+@pytest.mark.django_db
 def test_public_view_aggregations_view_doesnt_exist(api_client):
     url = reverse(
         "api:database:views:grid:public-field-aggregations",
