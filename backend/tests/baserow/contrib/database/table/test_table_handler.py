@@ -284,6 +284,26 @@ def test_fill_table_with_initial_data(data_fixture):
     assert table.field_set.count() == 5
 
 
+@pytest.mark.django_db(transaction=True)
+def test_fill_table_with_initial_data_strips_nul_byte_from_field_name(data_fixture):
+    user = data_fixture.create_user()
+    database = data_fixture.create_database_application(user=user)
+
+    table_handler = TableHandler()
+
+    data = [
+        ["Name\x00", "B"],
+        ["1-1", "1-2"],
+    ]
+    table, _ = table_handler.create_table(
+        user, database, name="Table 1", data=data, first_row_header=True
+    )
+
+    text_fields = TextField.objects.filter(table=table)
+    assert "\x00" not in text_fields[0].name
+    assert text_fields[0].name == "Name"
+
+
 @pytest.mark.django_db
 @patch("baserow.contrib.database.table.signals.table_updated.send")
 def test_update_database_table(send_mock, data_fixture):

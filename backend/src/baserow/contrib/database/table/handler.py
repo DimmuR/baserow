@@ -69,6 +69,12 @@ BATCH_SIZE = 1024
 TableForUpdate = NewType("TableForUpdate", Table)
 
 
+def _strip_nul_bytes(value: Any) -> str:
+    # Postgres text/varchar columns can't store NUL bytes, so psycopg2
+    # rejects them outright before any statement reaches the server.
+    return str(value).replace("\x00", "")
+
+
 class TableUsageHandler:
     @classmethod
     def calculate_table_storage_usage(cls, table_id):
@@ -528,6 +534,7 @@ class TableHandler:
             raise InvalidInitialTableData("At least one column should be provided.")
 
         fields = data.pop(0) if first_row_header else []
+        fields = [_strip_nul_bytes(name) for name in fields]
 
         for i in range(len(fields), largest_column_count):
             fields.append(_("Field %d") % (i + 1,))
@@ -558,7 +565,7 @@ class TableHandler:
             raise InvalidBaserowFieldName()
 
         fields_with_type = [(field_name, "text", {}) for field_name in fields]
-        result = [[str(value) for value in row] for row in data]
+        result = [[_strip_nul_bytes(value) for value in row] for row in data]
 
         return fields_with_type, result
 
