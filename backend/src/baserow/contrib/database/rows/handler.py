@@ -970,7 +970,9 @@ class RowHandler:
                 field_object["field"],
                 value,
             )
-            getattr(instance, field_name).through.objects.bulk_create(m2m_objects)
+            self._bulk_create_m2m_through_rows(
+                getattr(instance, field_name).through, m2m_objects
+            )
 
         cascade_update = field_rules_handler.collector.get_processed_rows()
 
@@ -1557,7 +1559,7 @@ class RowHandler:
 
         for field_name, values in many_to_many.items():
             through = getattr(model, field_name).through
-            through.objects.bulk_create(values)
+            self._bulk_create_m2m_through_rows(through, values)
 
         _, dependant_fields, dependant_rows_updates = (
             self.update_dependencies_of_rows_created(
@@ -1796,6 +1798,22 @@ class RowHandler:
                 )
             update_collector.apply_updates_and_get_updated_fields(field_cache)
         return fields, dependant_fields, update_collector.get_dependant_rows_updates()
+
+    @staticmethod
+    def _bulk_create_m2m_through_rows(through: Type[Model], rows: List[Model]):
+        """
+        Bulk inserts many to many through rows, ignoring conflicts. Link row
+        fields are bidirectional, so the same through table can be written to
+        concurrently from either side of the relation. `ignore_conflicts` makes
+        that race harmless: the pair either already exists (desired end state
+        reached by the other writer) or is inserted here.
+
+        :param through: The many to many through model to insert rows into.
+        :param rows: The through model instances to insert.
+        """
+
+        if rows:
+            through.objects.bulk_create(rows, ignore_conflicts=True)
 
     def _prepare_m2m_field_related_objects(
         self, row: GeneratedTableModel, field_name: str, value: List[Any]
@@ -2595,7 +2613,7 @@ class RowHandler:
         for field_name, m2m_to_add in m2m_values_to_add.items():
             through = getattr(model, field_name).through
             row_column_name = row_column_names[field_name]
-            through.objects.bulk_create(m2m_to_add)
+            self._bulk_create_m2m_through_rows(through, m2m_to_add)
 
         bulk_update_fields = ["updated_on"]
         if field_rules_handler.has_field_rules():
