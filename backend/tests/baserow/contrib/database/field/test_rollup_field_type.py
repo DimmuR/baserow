@@ -6,11 +6,20 @@ from django.urls import reverse
 import pytest
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST
 
+from baserow.contrib.database.fields.dependencies.update_collector import (
+    FieldUpdateCollector,
+)
 from baserow.contrib.database.fields.exceptions import (
     InvalidRollupTargetField,
     InvalidRollupThroughField,
 )
+from baserow.contrib.database.fields.field_cache import FieldCache
+from baserow.contrib.database.fields.field_types import (
+    FormulaFieldType,
+    RollupFieldType,
+)
 from baserow.contrib.database.fields.handler import FieldHandler
+from baserow.contrib.database.fields.models import RollupField
 from baserow.contrib.database.formula import BaserowFormulaNumberType
 from baserow.contrib.database.formula.types.exceptions import InvalidFormulaType
 from baserow.contrib.database.rows.handler import RowHandler
@@ -23,7 +32,6 @@ if TYPE_CHECKING:
     from baserow.contrib.database.fields.models import (
         CountField,
         LinkRowField,
-        RollupField,
     )
 
 
@@ -774,3 +782,50 @@ def test_rollup_field_api_response_includes_number_negative(data_fixture, api_cl
     response_json = response.json()
     assert response_json["type"] == "rollup"
     assert response_json["number_negative"] is True
+
+
+@pytest.mark.django_db
+def test_field_dependency_deleted_persists_rollup_field_through_field_id_as_null(
+    data_fixture, monkeypatch
+):
+    # Stub the superclass save so only RollupFieldType's own persistence is tested (Sentry BASEROW-SAAS-BACKEND-55).
+    monkeypatch.setattr(
+        FormulaFieldType, "field_dependency_deleted", lambda *args, **kwargs: None
+    )
+
+    user = data_fixture.create_user()
+    table_a = data_fixture.create_database_table(user=user)
+    table_b = data_fixture.create_database_table(user=user, database=table_a.database)
+    data_fixture.create_text_field(name="primary_a", table=table_a, primary=True)
+    data_fixture.create_text_field(name="primary_b", table=table_b, primary=True)
+    target_field = data_fixture.create_number_field(name="number", table=table_a)
+
+    link_a_to_b = FieldHandler().create_field(
+        user,
+        table_a,
+        "link_row",
+        name="A<->B",
+        link_row_table=table_b,
+        has_related_field=True,
+    )
+    related_field = link_a_to_b.link_row_related_field
+
+    rollup_field = FieldHandler().create_field(
+        user,
+        table_b,
+        "rollup",
+        name="rollup_field",
+        through_field_id=related_field.id,
+        target_field_id=target_field.id,
+        rollup_function="sum",
+    )
+
+    RollupFieldType().field_dependency_deleted(
+        rollup_field,
+        related_field,
+        FieldUpdateCollector(table_b),
+        FieldCache(),
+    )
+
+    persisted_rollup_field = RollupField.objects.get(id=rollup_field.id)
+    assert persisted_rollup_field.through_field_id is None
