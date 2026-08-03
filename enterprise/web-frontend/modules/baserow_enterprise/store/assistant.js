@@ -407,7 +407,9 @@ export const getters = {
 
   uiContext: (state, getters, rootState, rootGetters) => {
     const scope = rootGetters['undoRedo/getCurrentScope']
-    const workspace = rootGetters['workspace/get'](scope.workspace)
+    const workspace = scope.workspace
+      ? rootGetters['workspace/get'](scope.workspace)
+      : null
 
     const application = scope.application
       ? rootGetters['application/get'](scope.application)
@@ -423,7 +425,7 @@ export const getters = {
 
     const uiContext = {
       applicationType: application?.type || null,
-      workspace: { id: workspace.id, name: workspace.name },
+      workspace: workspace ? { id: workspace.id, name: workspace.name } : null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }
 
