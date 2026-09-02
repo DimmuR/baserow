@@ -24,6 +24,7 @@ from rest_framework.status import (
 )
 
 from baserow.contrib.database.application_types import DatabaseApplicationType
+from baserow.contrib.database.fields.actions import UpdateFieldActionType
 from baserow.contrib.database.fields.dependencies.exceptions import (
     SelfReferenceFieldDependencyError,
 )
@@ -46,6 +47,8 @@ from baserow.contrib.database.rows.handler import RowHandler
 from baserow.contrib.database.table.handler import TableHandler
 from baserow.contrib.database.table.models import GeneratedTableModel, Table
 from baserow.contrib.database.views.handler import ViewHandler
+from baserow.core.action.models import Action
+from baserow.core.action.registries import action_type_registry
 from baserow.core.cache import local_cache
 from baserow.core.handler import CoreHandler
 from baserow.core.models import TrashEntry, WorkspaceUser
@@ -3330,3 +3333,55 @@ def test_duplicate_link_row_no_multiple_relationships(data_fixture):
         field=link_row_field, user=user, duplicate_data=True
     )
     assert dup_field.link_row_multiple_relationships is False
+
+
+@pytest.mark.django_db
+@pytest.mark.field_link_row
+def test_update_link_row_field_type_change_type_with_limit_selection_view(
+    data_fixture,
+):
+    """
+    Converting a link_row field that has a link_row_limit_selection_view set to
+    another field type must not leak the View model instance into the action's
+    original_field_params. When it does, Action.objects.create fails to JSON encode
+    the params with:
+        TypeError: Object of type View is not JSON serializable
+    """
+
+    session_id = "session-id"
+    user = data_fixture.create_user(session_id=session_id)
+    database = data_fixture.create_database_application(user=user)
+    table = data_fixture.create_database_table(database=database)
+    customers_table = data_fixture.create_database_table(database=database)
+    customers_view = data_fixture.create_grid_view(table=customers_table)
+
+    field_handler = FieldHandler()
+    link_row_field = field_handler.create_field(
+        user=user,
+        table=table,
+        name="Link Row",
+        type_name="link_row",
+        link_row_table=customers_table,
+    )
+    link_row_field = field_handler.update_field(
+        user=user,
+        field=link_row_field,
+        link_row_limit_selection_view_id=customers_view.id,
+    )
+    assert link_row_field.link_row_limit_selection_view_id == customers_view.id
+
+    # Convert the field type away from link_row while the limit selection view is
+    # set. This must not raise a JSON serialization error.
+    action_type_registry.get_by_type(UpdateFieldActionType).do(
+        user, link_row_field, new_type_name="text"
+    )
+
+    action = (
+        Action.objects.filter(type=UpdateFieldActionType.type).order_by("id").last()
+    )
+    assert action is not None
+    assert "link_row_limit_selection_view" not in action.params["original_field_params"]
+    assert (
+        action.params["original_field_params"]["link_row_limit_selection_view_id"]
+        == customers_view.id
+    )
