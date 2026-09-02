@@ -100,6 +100,41 @@ def test_specific_iterator(data_fixture, django_assert_num_queries):
 
 
 @pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_specific_iterator_no_n_plus_one_on_content_type(data_fixture):
+    text_field_1 = data_fixture.create_text_field()
+    text_field_2 = data_fixture.create_text_field()
+
+    long_text_field_1 = data_fixture.create_long_text_field()
+    long_text_field_2 = data_fixture.create_long_text_field()
+
+    base_queryset = Field.objects.filter(
+        id__in=[
+            text_field_1.id,
+            text_field_2.id,
+            long_text_field_1.id,
+            long_text_field_2.id,
+        ]
+    ).order_by("id")
+
+    ContentType.objects.clear_cache()
+
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as ctx:
+        list(specific_iterator(base_queryset))
+
+    content_type_queries = [
+        q for q in ctx.captured_queries if "django_content_type" in q["sql"]
+    ]
+    assert len(content_type_queries) <= 1, (
+        f"Expected at most 1 query on django_content_type (batch fetch), "
+        f"got {len(content_type_queries)} (N+1). Queries:\n"
+        + "\n".join(q["sql"] for q in content_type_queries)
+    )
+
+
+@pytest.mark.django_db
 def test_specific_iterator_with_deleted_type(data_fixture, django_assert_num_queries):
     user = data_fixture.create_user()
     field_2 = data_fixture.create_text_field(user=user)
