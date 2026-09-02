@@ -2,6 +2,8 @@ from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from django.core.files.storage import FileSystemStorage
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 import pytest
 
@@ -574,6 +576,40 @@ def test_timeline_view_get_hidden_fields_all_fields(
         assert end_date_field.id not in results
         assert field_hidden.id in results
         assert field_no_field_option.id in results
+
+
+@pytest.mark.django_db
+@pytest.mark.view_timeline
+def test_timeline_create_missing_field_options_does_not_scale_with_field_count(
+    premium_data_fixture,
+):
+    # Regression test for an N+1 in create_missing_field_options() shared by
+    # every field-options-bearing view type, not just grid.
+    table = premium_data_fixture.create_database_table()
+    timeline_view = premium_data_fixture.create_timeline_view(
+        table=table, create_options=False
+    )
+    fields = [premium_data_fixture.create_text_field(table=table) for _ in range(10)]
+    # The timeline view's start/end date fields also need field options.
+    total_fields = fields + [
+        timeline_view.start_date_field,
+        timeline_view.end_date_field,
+    ]
+
+    with CaptureQueriesContext(connection) as captured:
+        field_options = timeline_view.get_field_options(create_if_missing=True)
+
+    assert len(field_options) == len(total_fields)
+
+    field_options_queries = [
+        query
+        for query in captured.captured_queries
+        if "database_timelineviewfieldoptions" in query["sql"]
+    ]
+    assert len(field_options_queries) <= 4, (
+        f"Expected a constant number of TimelineViewFieldOptions queries, got "
+        f"{len(field_options_queries)} for {len(total_fields)} missing fields"
+    )
 
 
 @pytest.mark.django_db

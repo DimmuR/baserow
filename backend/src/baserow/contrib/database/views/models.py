@@ -338,9 +338,12 @@ class View(
         # in-efficient because this rarely happens. The most important part
         # is that the check is fast.
         existing_field_ids = [options.field_id for options in existing_field_options]
+        hidden = view_type.get_default_hidden_for_new_field_options(
+            self, existing_field_ids
+        )
         new_field_options = through_model.objects.bulk_create(
             [
-                view_type.prepare_field_options(self, field.id)
+                view_type.prepare_field_options(self, field.id, hidden=hidden)
                 for field in fields
                 if field.id not in existing_field_ids
             ],
