@@ -2200,6 +2200,52 @@ def test_update_rows_only_create_or_delete_differences_for_m2m_fields(data_fixtu
 
 
 @pytest.mark.django_db
+def test_update_rows_racing_m2m_write_from_related_link_row_field(data_fixture):
+    user = data_fixture.create_user()
+    table_a, table_b, link_a_b = data_fixture.create_two_linked_tables(user=user)
+    link_b_a = link_a_b.link_row_related_field
+
+    model_a = table_a.get_model()
+    model_b = table_b.get_model()
+
+    (row_a1,) = RowHandler().force_create_rows(user, table_a, [{}]).created_rows
+    (row_b1,) = RowHandler().force_create_rows(user, table_b, [{}]).created_rows
+
+    through = model_a._meta.get_field(link_a_b.db_column).remote_field.through
+
+    # table_a writes the relation and commits the through-table row.
+    RowHandler().force_update_rows(
+        user,
+        table_a,
+        [{"id": row_a1.id, link_a_b.db_column: [row_b1.id]}],
+        model=model_a,
+    )
+    assert through.objects.count() == 1
+
+    # Simulate a concurrent request updating row_b1 through the related field
+    # whose snapshot of the current relations was taken before the write above,
+    # so it still believes the relation needs to be added.
+    original_get_internal_values_for_fields = RowHandler.get_internal_values_for_fields
+
+    def stale_snapshot(self, row, updated_field_ids):
+        if row.id == row_b1.id:
+            return {link_b_a.db_column: []}
+        return original_get_internal_values_for_fields(self, row, updated_field_ids)
+
+    with patch.object(RowHandler, "get_internal_values_for_fields", stale_snapshot):
+        RowHandler().force_update_rows(
+            user,
+            table_b,
+            [{"id": row_b1.id, link_b_a.db_column: [row_a1.id]}],
+            model=model_b,
+        )
+
+    # The relation already exists (added by the table_a update above), so the
+    # racing table_b update must not create a duplicate through-table row.
+    assert through.objects.count() == 1
+
+
+@pytest.mark.django_db
 def test_create_row_handler_applies_view_defaults(data_fixture):
     user = data_fixture.create_user()
     table = data_fixture.create_database_table(user=user)
