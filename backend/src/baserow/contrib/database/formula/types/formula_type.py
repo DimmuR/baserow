@@ -64,6 +64,14 @@ class BaserowFormulaTypeHasEmptyBaserowExpression(abc.ABC):
 
 
 class BaserowFormulaType(abc.ABC):
+    db_column_is_jsonb: bool = False
+    """
+    Whether the physical database column backing a formula field of this type is
+    `jsonb`. Used to detect declared-vs-physical column type divergence (e.g. an
+    errored formula declares `text` but keeps its residual `jsonb` column) so the
+    column can be recreated instead of left mistyped.
+    """
+
     @classmethod
     @property
     @abc.abstractmethod
@@ -584,7 +592,14 @@ class BaserowFormulaInvalidType(BaserowFormulaType):
         raise InvalidFormulaType(self.error)
 
     def should_recreate_when_old_type_was(self, old_type: "BaserowFormulaType") -> bool:
-        return False
+        # When transitioning into the invalid state we declare db type `text`, but the
+        # previous physical column may be `jsonb` (array/lookup, link, single-file,
+        # single/multiple-select, multiple-collaborators). Recreate the column in that
+        # case so declared == physical again; otherwise a residual `jsonb` column
+        # survives and later text operations (e.g. regexp_split_to_array during a
+        # multiple-select conversion) crash. The invalid formula has no meaningful
+        # value, so recreating the column loses nothing.
+        return old_type.db_column_is_jsonb
 
     def get_search_expression(self, field, queryset) -> Expression:
         return Value(None)
