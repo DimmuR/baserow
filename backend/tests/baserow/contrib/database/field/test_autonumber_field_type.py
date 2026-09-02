@@ -1,4 +1,4 @@
-from django.core.exceptions import ValidationError
+from django.core.exceptions import FieldError, ValidationError
 from django.db import connection
 
 import pytest
@@ -710,3 +710,41 @@ def test_autonumber_sequence_uses_max_value_not_row_count(data_fixture):
     new_row = model.objects.create()
     new_row.refresh_from_db()
     assert getattr(new_row, db_column) == 101
+
+
+@pytest.mark.field_autonumber
+@pytest.mark.django_db
+def test_autonumber_field_created_against_view_sorted_by_annotation_backed_field(
+    data_fixture,
+):
+    # Regression: creating an autonumber field against a view sorted by a field
+    # whose sort is annotation-backed (e.g. multiple-select, producing a
+    # `field_<id>_agg_sort` annotation) must not raise. `update_rows_with_field_sequence`
+    # harvested the view's order-by expressions but sequenced a bare, un-annotated
+    # table queryset, so Django could not resolve the annotation reference.
+    user = data_fixture.create_user()
+    table = data_fixture.create_database_table(user=user)
+    multi_select_field = data_fixture.create_multiple_select_field(
+        table=table, user=user
+    )
+
+    model = table.get_model()
+    model.objects.create()
+    model.objects.create()
+
+    view = data_fixture.create_grid_view(table=table)
+    data_fixture.create_view_sort(view=view, field=multi_select_field, order="ASC")
+
+    try:
+        autonumber_field = FieldHandler().create_field(
+            user, table, "autonumber", name="Seq", view_id=view.id
+        )
+    except FieldError as exc:
+        pytest.fail(
+            f"Creating autonumber field against annotation-backed sorted view "
+            f"raised FieldError: {exc}"
+        )
+
+    model = table.get_model()
+    values = model.objects.values_list(f"field_{autonumber_field.id}", flat=True)
+    assert sorted(values) == [1, 2]
