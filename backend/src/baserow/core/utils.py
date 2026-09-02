@@ -30,6 +30,7 @@ from typing import (
 )
 
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import ForeignKey, ManyToManyField, Model
 from django.db.models.fields import NOT_PROVIDED
@@ -166,6 +167,23 @@ def extract_allowed(values, allowed_fields):
             allowed_values[field] = values[field]
 
     return allowed_values
+
+
+def get_attr_or_none(instance, field_name):
+    """
+    Returns the value of the given attribute, or None if reading it raises
+    `ObjectDoesNotExist` (e.g. a foreign key pointing at a row that no longer
+    exists on a stale in-memory instance).
+
+    :param instance: The object to read the attribute from.
+    :param field_name: The name of the attribute to read.
+    :return: The attribute's value, or None if the related row is gone.
+    """
+
+    try:
+        return getattr(instance, field_name)
+    except ObjectDoesNotExist:
+        return None
 
 
 def set_allowed_attrs(values, allowed_fields, instance):

@@ -180,6 +180,27 @@ def test_update_element_invalid_values(data_fixture):
 
 
 @pytest.mark.django_db
+def test_update_element_data_source_deleted_out_from_under_stale_instance(
+    data_fixture,
+):
+    from baserow.contrib.builder.data_sources.models import DataSource
+
+    element = data_fixture.create_builder_table_element()
+    data_source_id = element.data_source_id
+
+    # Simulate a request that already holds an in-memory instance whose
+    # `data_source` relation is not cached, taken before a concurrent request
+    # deletes that data source.
+    stale_element = ElementHandler().get_element_for_update(element.id)
+
+    DataSource.objects.filter(id=data_source_id).delete()
+
+    element_updated = ElementHandler().update_element(stale_element, data_source=None)
+
+    assert element_updated.data_source_id is None
+
+
+@pytest.mark.django_db
 def test_creating_element_in_container_starts_its_own_order_sequence(data_fixture):
     page = data_fixture.create_builder_page()
     container = data_fixture.create_builder_column_element(page=page)
