@@ -5,8 +5,17 @@ from django.urls import reverse
 import pytest
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST
 
+from baserow.contrib.database.fields.dependencies.update_collector import (
+    FieldUpdateCollector,
+)
 from baserow.contrib.database.fields.exceptions import InvalidCountThroughField
+from baserow.contrib.database.fields.field_cache import FieldCache
+from baserow.contrib.database.fields.field_types import (
+    CountFieldType,
+    FormulaFieldType,
+)
 from baserow.contrib.database.fields.handler import FieldHandler
+from baserow.contrib.database.fields.models import CountField
 from baserow.contrib.database.formula import BaserowFormulaNumberType
 from baserow.contrib.database.rows.handler import RowHandler
 from baserow.core.handler import CoreHandler
@@ -435,3 +444,47 @@ def test_convert_count_to_text_field_via_api(data_fixture, api_client):
         HTTP_AUTHORIZATION=f"JWT {token}",
     )
     assert response.status_code == HTTP_200_OK
+
+
+@pytest.mark.django_db
+def test_field_dependency_deleted_persists_count_field_through_field_id_as_null(
+    data_fixture, monkeypatch
+):
+    # Stub the superclass save so only CountFieldType's own persistence is tested (Sentry BASEROW-SAAS-BACKEND-55).
+    monkeypatch.setattr(
+        FormulaFieldType, "field_dependency_deleted", lambda *args, **kwargs: None
+    )
+
+    user = data_fixture.create_user()
+    table_a = data_fixture.create_database_table(user=user)
+    table_b = data_fixture.create_database_table(user=user, database=table_a.database)
+    data_fixture.create_text_field(name="primary_a", table=table_a, primary=True)
+    data_fixture.create_text_field(name="primary_b", table=table_b, primary=True)
+
+    link_a_to_b = FieldHandler().create_field(
+        user,
+        table_a,
+        "link_row",
+        name="A<->B",
+        link_row_table=table_b,
+        has_related_field=True,
+    )
+    related_field = link_a_to_b.link_row_related_field
+
+    count_field = FieldHandler().create_field(
+        user,
+        table_b,
+        "count",
+        name="count_field",
+        through_field_id=related_field.id,
+    )
+
+    CountFieldType().field_dependency_deleted(
+        count_field,
+        related_field,
+        FieldUpdateCollector(table_b),
+        FieldCache(),
+    )
+
+    persisted_count_field = CountField.objects.get(id=count_field.id)
+    assert persisted_count_field.through_field_id is None

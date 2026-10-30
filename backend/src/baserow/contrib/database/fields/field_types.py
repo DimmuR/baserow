@@ -7084,6 +7084,7 @@ class CountFieldType(FormulaFieldType):
     ):
         if field.through_field_id == deleted_field.id:
             field.through_field_id = None
+            field.save(recalculate=False)
         return super().field_dependency_deleted(
             field,
             deleted_field,
@@ -7328,6 +7329,7 @@ class RollupFieldType(FormulaFieldType):
     ):
         if field.through_field_id == deleted_field.id:
             field.through_field_id = None
+            field.save(recalculate=False)
         return super().field_dependency_deleted(
             field,
             deleted_field,
