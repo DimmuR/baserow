@@ -19,8 +19,9 @@ export function makeRefreshAuthInterceptor(
   let refreshPromise
   const getRefreshAuthPromise = () => {
     if (refreshPromise === undefined) {
-      refreshPromise = refreshAuthFunction()
-      refreshPromise.finally(() => (refreshPromise = undefined))
+      refreshPromise = refreshAuthFunction().finally(() => {
+        refreshPromise = undefined
+      })
     }
     return refreshPromise
   }
