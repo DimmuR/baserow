@@ -1681,6 +1681,9 @@ class ViewHandler:
                 field_id__in=valid_field_ids, **{field_name: view}
             ).select_for_update(of=("self",))
         }
+        hidden_for_new_options = view_type.get_default_hidden_for_new_field_options(
+            view, list(existing_field_options.keys())
+        )
 
         field_options_to_create = []
         field_options_to_update = []
@@ -1692,7 +1695,9 @@ class ViewHandler:
             if exists:
                 field_options_object = existing_field_options[int(field_id)]
             else:
-                field_options_object = view_type.prepare_field_options(view, field_id)
+                field_options_object = view_type.prepare_field_options(
+                    view, field_id, hidden=hidden_for_new_options
+                )
 
             allowed_values = extract_allowed(
                 options, view_type.field_options_allowed_fields

@@ -507,6 +507,36 @@ def test_get_hidden_kanban_view_fields_all_fields(
         assert field_no_field_option.id in results
 
 
+@pytest.mark.django_db
+def test_kanban_create_missing_field_options_does_not_scale_with_field_count(
+    premium_data_fixture,
+):
+    # Regression test for an N+1 in create_missing_field_options() shared by
+    # every field-options-bearing view type, not just grid.
+    table = premium_data_fixture.create_database_table()
+    kanban_view = premium_data_fixture.create_kanban_view(
+        table=table, create_options=False
+    )
+    fields = [premium_data_fixture.create_text_field(table=table) for _ in range(10)]
+    # The kanban view's single_select_field also needs field options.
+    total_fields = fields + [kanban_view.single_select_field]
+
+    with CaptureQueriesContext(connection) as captured:
+        field_options = kanban_view.get_field_options(create_if_missing=True)
+
+    assert len(field_options) == len(total_fields)
+
+    field_options_queries = [
+        query
+        for query in captured.captured_queries
+        if "database_kanbanviewfieldoptions" in query["sql"]
+    ]
+    assert len(field_options_queries) <= 4, (
+        f"Expected a constant number of KanbanViewFieldOptions queries, got "
+        f"{len(field_options_queries)} for {len(total_fields)} missing fields"
+    )
+
+
 @pytest.mark.django_db(transaction=True)
 @patch(
     "baserow.contrib.database.search.handler.SearchHandler.schedule_update_search_data"

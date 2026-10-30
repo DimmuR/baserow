@@ -6,6 +6,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from zoneinfo import ZoneInfo
 
 from django.core.files.storage import FileSystemStorage
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 import pytest
@@ -510,6 +512,36 @@ def test_calendar_view_get_hidden_fields_all_fields(
         assert date_field.id not in results
         assert field_hidden.id in results
         assert field_no_field_option.id in results
+
+
+@pytest.mark.django_db
+def test_calendar_create_missing_field_options_does_not_scale_with_field_count(
+    premium_data_fixture,
+):
+    # Regression test for an N+1 in create_missing_field_options() shared by
+    # every field-options-bearing view type, not just grid.
+    table = premium_data_fixture.create_database_table()
+    calendar_view = premium_data_fixture.create_calendar_view(
+        table=table, create_options=False
+    )
+    fields = [premium_data_fixture.create_text_field(table=table) for _ in range(10)]
+    # The calendar view's date_field also needs field options.
+    total_fields = fields + [calendar_view.date_field]
+
+    with CaptureQueriesContext(connection) as captured:
+        field_options = calendar_view.get_field_options(create_if_missing=True)
+
+    assert len(field_options) == len(total_fields)
+
+    field_options_queries = [
+        query
+        for query in captured.captured_queries
+        if "database_calendarviewfieldoptions" in query["sql"]
+    ]
+    assert len(field_options_queries) <= 4, (
+        f"Expected a constant number of CalendarViewFieldOptions queries, got "
+        f"{len(field_options_queries)} for {len(total_fields)} missing fields"
+    )
 
 
 def case(**kwargs):
